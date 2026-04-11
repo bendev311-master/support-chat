@@ -3,8 +3,10 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
+const FRONTEND_URL = process.env.FRONTEND_URL || '*';
+
 const app = express();
-app.use(cors());
+app.use(cors({ origin: FRONTEND_URL }));
 app.use(express.json());
 
 // Health check endpoint
@@ -15,7 +17,7 @@ app.get('/health', (_req, res) => {
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: FRONTEND_URL,
     methods: ['GET', 'POST']
   }
 });

@@ -1439,3 +1439,108 @@ h1, h2, h3, h4, h5, h6 {
   gap: var(--space-1);
   flex-shrink: 0;
 }
+
+/* ── Settings Panel ───────────────────────────────────────── */
+.settings-panel {
+  background: var(--surface-container-lowest);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  max-width: 480px;
+  width: 92%;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  animation: scaleIn 0.25s ease;
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.settings-group-title {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--on-surface-variant);
+  padding: var(--space-2) var(--space-4);
+}
+
+.settings-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: none;
+  background: transparent;
+  text-align: left;
+  width: 100%;
+  color: var(--on-surface);
+  font-size: 0.875rem;
+}
+
+.settings-item:hover {
+  background: var(--surface-container-low);
+}
+
+.settings-item .material-icons-outlined {
+  font-size: 20px;
+  color: var(--on-surface-variant);
+  flex-shrink: 0;
+}
+
+.settings-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-item-label {
+  font-weight: 500;
+}
+
+.settings-item-desc {
+  font-size: 0.75rem;
+  color: var(--on-surface-variant);
+  margin-top: 1px;
+}
+
+.settings-item-value {
+  font-size: 0.8125rem;
+  color: var(--on-surface-variant);
+  flex-shrink: 0;
+}
+
+.settings-divider {
+  height: 1px;
+  background: var(--surface-container-high);
+  margin: var(--space-2) 0;
+}
+
+/* ── Btn Icon Utility ─────────────────────────────────────── */
+.btn-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--on-surface-variant);
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.btn-icon:hover {
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+}

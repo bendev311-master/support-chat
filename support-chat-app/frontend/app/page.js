@@ -121,13 +121,13 @@ export default function CustomerLoginPage() {
           {/* Name field */}
           <div className="input-group">
             <label className="input-label" htmlFor="login-name">
-              {isRegister ? 'Tên hiển thị' : 'Email'}
+              {isRegister ? 'Tên hiển thị' : 'Tên hiển thị'}
             </label>
             <input
               id="login-name"
               type="text"
               className="input"
-              placeholder={isRegister ? 'Nguyễn Văn A' : 'your@email.com'}
+              placeholder={isRegister ? 'Nguyễn Văn A' : 'Nhập tên của bạn'}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
@@ -152,8 +152,9 @@ export default function CustomerLoginPage() {
             </div>
           )}
 
-          {/* Password */}
-          <div className="input-group">
+          {/* Password - only for register */}
+          {isRegister && (
+          <div className="input-group" style={{ animation: 'fadeSlideUp 0.3s ease' }}>
             <label className="input-label" htmlFor="login-password">Mật khẩu</label>
             <input
               id="login-password"
@@ -162,10 +163,11 @@ export default function CustomerLoginPage() {
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              autoComplete={isRegister ? 'new-password' : 'current-password'}
-              required={isRegister}
+              autoComplete="new-password"
+              required
             />
           </div>
+          )}
 
           {/* Confirm Password - only for register */}
           {isRegister && (
@@ -184,14 +186,6 @@ export default function CustomerLoginPage() {
             </div>
           )}
 
-          {/* Forgot password - only login */}
-          {!isRegister && (
-            <div className="auth-links">
-              <a href="#" className="auth-link" style={{ fontSize: '0.8125rem' }}>
-                Quên mật khẩu?
-              </a>
-            </div>
-          )}
 
           <button type="submit" className="btn-gradient" id="auth-submit-btn">
             {isRegister ? 'Đăng ký' : 'Đăng nhập'}

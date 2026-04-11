@@ -1,0 +1,15 @@
+# This is an example configuration file
+# To learn more, see the full config.yaml reference: https://docs.continue.dev/reference
+
+name: Example Config
+version: 1.0.0
+schema: v1
+
+# Define which models can be used
+# https://docs.continue.dev/customization/models
+models:
+  - name: Gemini
+    provider: openai
+    model: claude-opus-4-5-thinking
+    apiBase: http://127.0.0.1:8045/v1
+    apiKey: sk-847dec48c75f44d2b1716c7af1f966f3

@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 export default function StaffLoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [role, setRole] = useState('vendor');
 
   const handleLogin = (e) => {
@@ -52,29 +51,16 @@ export default function StaffLoginPage() {
           </div>
 
           <div className="input-group">
-            <label className="input-label" htmlFor="staff-email">Email công việc</label>
+            <label className="input-label" htmlFor="staff-email">Tên nhân viên</label>
             <input
               id="staff-email"
               type="text"
               className="input"
-              placeholder="name@clarion.stream"
+              placeholder="Nguyễn Văn A"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
               autoComplete="username"
-            />
-          </div>
-
-          <div className="input-group">
-            <label className="input-label" htmlFor="staff-password">Mật khẩu</label>
-            <input
-              id="staff-password"
-              type="password"
-              className="input"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
             />
           </div>
 
@@ -89,12 +75,6 @@ export default function StaffLoginPage() {
               <option value="vendor">Nhân viên hỗ trợ</option>
               <option value="admin">Quản trị viên</option>
             </select>
-          </div>
-
-          <div className="auth-links">
-            <a href="#" className="auth-link" style={{ fontSize: '0.8125rem' }}>
-              Quên mật khẩu?
-            </a>
           </div>
 
           <button type="submit" className="btn-gradient">

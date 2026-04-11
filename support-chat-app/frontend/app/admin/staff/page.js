@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import { useRouter } from 'next/navigation';
+import API_URL from '../../config';
 
 export default function StaffManagementPage() {
   const router = useRouter();
@@ -14,7 +15,7 @@ export default function StaffManagementPage() {
     const user = JSON.parse(userStr);
     if (user.role !== 'admin') { router.push('/staff-login'); return; }
 
-    const newSocket = io('http://localhost:4000');
+    const newSocket = io(API_URL);
     setSocket(newSocket);
 
     newSocket.on('connect', () => {

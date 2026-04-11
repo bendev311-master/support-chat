@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { useRouter } from 'next/navigation';
+import API_URL from '../config';
 import { Send } from 'lucide-react';
 
 export default function VendorPanel() {
@@ -19,6 +20,14 @@ export default function VendorPanel() {
   const [telegramChatId, setTelegramChatId] = useState('');
   const [telegramTestResult, setTelegramTestResult] = useState(null);
   const [announcements, setAnnouncements] = useState([]);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState({
+    notifications: true,
+    sound: true,
+    autoJoin: false,
+    fontSize: 'normal',
+    darkMode: true,
+  });
   const messagesEndRef = useRef(null);
   const typingTimeout = useRef(null);
   const socketRef = useRef(null);
@@ -29,12 +38,20 @@ export default function VendorPanel() {
     const user = JSON.parse(userStr);
     if (user.role !== 'vendor') { router.push('/staff-login'); return; }
 
-    const newSocket = io('http://localhost:4000');
+    const newSocket = io(API_URL, {
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 10,
+    });
     setSocket(newSocket);
     socketRef.current = newSocket;
 
     newSocket.on('connect', () => {
       newSocket.emit('register', user);
+    });
+
+    newSocket.on('connect_error', (err) => {
+      console.error('Vendor socket connection error:', err.message);
     });
 
     newSocket.on('state_update', (newState) => {
@@ -196,25 +213,31 @@ export default function VendorPanel() {
         </div>
 
         <div className="sidebar-spacer" />
+        <button className="sidebar-link" onClick={() => setShowSettings(true)}>
+          <span className="material-icons-outlined">settings</span>
+          <span>Cài đặt</span>
+        </button>
         <button className="sidebar-link" onClick={handleLogout}>
           <span className="material-icons-outlined">logout</span>
           <span>Đăng xuất</span>
         </button>
       </nav>
 
-      {/* Marquee Banner */}
-      {announcements.length > 0 && (
-        <div className="marquee-banner" style={{ gridColumn: '1 / -1' }}>
-          <div className="marquee-track">
-            {[...announcements, ...announcements].map((a, i) => (
-              <span key={i} className="marquee-item">{a.content}</span>
-            ))}
+      {/* Main Content Area */}
+      <div className="main-content" style={{ display: 'flex', flexDirection: 'column' }}>
+        {/* Marquee Banner */}
+        {announcements.length > 0 && (
+          <div className="marquee-banner">
+            <div className="marquee-track">
+              {[...announcements, ...announcements].map((a, i) => (
+                <span key={i} className="marquee-item">{a.content}</span>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Chat Layout */}
-      <div className="chat-layout">
+        {/* Chat Layout */}
+        <div className="chat-layout">
         {/* Chat List Panel */}
         <div className="chat-list-panel">
           <div className="chat-list-header">
@@ -382,6 +405,7 @@ export default function VendorPanel() {
             </div>
           )}
         </div>
+        </div>
       </div>
 
       {/* Telegram Settings Modal */}
@@ -502,6 +526,104 @@ export default function VendorPanel() {
                 {telegramTestResult.success ? 'Gửi test thành công! Kiểm tra Telegram.' : telegramTestResult.error}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowSettings(false); }}>
+          <div className="settings-panel">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="title-lg">⚙️ Cài đặt Nhân viên</div>
+              <button className="btn-icon" onClick={() => setShowSettings(false)}>
+                <span className="material-icons-outlined" style={{ fontSize: 20 }}>close</span>
+              </button>
+            </div>
+
+            <div className="settings-group">
+              <div className="settings-group-title">Thông báo</div>
+              <div className="settings-item">
+                <span className="material-icons-outlined">notifications</span>
+                <div className="settings-item-info">
+                  <div className="settings-item-label">Thông báo đẩy</div>
+                  <div className="settings-item-desc">Thông báo khi có khách mới hoặc tin nhắn</div>
+                </div>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={settings.notifications}
+                    onChange={() => setSettings(s => ({...s, notifications: !s.notifications}))} />
+                  <span className="toggle-slider" />
+                </label>
+              </div>
+              <div className="settings-item">
+                <span className="material-icons-outlined">volume_up</span>
+                <div className="settings-item-info">
+                  <div className="settings-item-label">Âm thanh</div>
+                  <div className="settings-item-desc">Phát âm báo khi nhận tin nhắn mới</div>
+                </div>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={settings.sound}
+                    onChange={() => setSettings(s => ({...s, sound: !s.sound}))} />
+                  <span className="toggle-slider" />
+                </label>
+              </div>
+            </div>
+
+            <div className="settings-group">
+              <div className="settings-group-title">Cuộc hội thoại</div>
+              <div className="settings-item">
+                <span className="material-icons-outlined">flash_on</span>
+                <div className="settings-item-info">
+                  <div className="settings-item-label">Tự động tiếp nhận</div>
+                  <div className="settings-item-desc">Tự động nhận chat khi có khách mới</div>
+                </div>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={settings.autoJoin}
+                    onChange={() => setSettings(s => ({...s, autoJoin: !s.autoJoin}))} />
+                  <span className="toggle-slider" />
+                </label>
+              </div>
+            </div>
+
+            <div className="settings-group">
+              <div className="settings-group-title">Giao diện</div>
+              <div className="settings-item">
+                <span className="material-icons-outlined">text_fields</span>
+                <div className="settings-item-info">
+                  <div className="settings-item-label">Cỡ chữ</div>
+                </div>
+                <select className="input" style={{ width: 'auto', padding: '4px 8px', fontSize: '0.8125rem' }}
+                  value={settings.fontSize}
+                  onChange={(e) => setSettings(s => ({...s, fontSize: e.target.value}))}>
+                  <option value="small">Nhỏ</option>
+                  <option value="normal">Trung bình</option>
+                  <option value="large">Lớn</option>
+                </select>
+              </div>
+              <div className="settings-item">
+                <span className="material-icons-outlined">dark_mode</span>
+                <div className="settings-item-info">
+                  <div className="settings-item-label">Chế độ tối</div>
+                </div>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={settings.darkMode}
+                    onChange={() => setSettings(s => ({...s, darkMode: !s.darkMode}))} />
+                  <span className="toggle-slider" />
+                </label>
+              </div>
+            </div>
+
+            <div className="settings-divider" />
+            <div className="settings-group">
+              <div className="settings-group-title">Tài khoản</div>
+              <button className="settings-item" onClick={handleLogout}>
+                <span className="material-icons-outlined" style={{ color: 'var(--error)' }}>logout</span>
+                <div className="settings-item-info">
+                  <div className="settings-item-label" style={{ color: 'var(--error)' }}>Đăng xuất</div>
+                  <div className="settings-item-desc">Thoát khỏi phiên làm việc</div>
+                </div>
+              </button>
+            </div>
           </div>
         </div>
       )}
