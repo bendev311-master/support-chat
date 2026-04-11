@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { useRouter } from 'next/navigation';
-import { Send } from 'lucide-react';
+import { Send, Star } from 'lucide-react';
 
 export default function CustomerChat() {
   const router = useRouter();
@@ -10,15 +10,21 @@ export default function CustomerChat() {
   const [messages, setMessages] = useState([]);
   const [inputVal, setInputVal] = useState('');
   const [roomId, setRoomId] = useState(null);
+  const [typingUser, setTypingUser] = useState(null);
+  const [isResolved, setIsResolved] = useState(false);
+  const [showRating, setShowRating] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
+  const [announcements, setAnnouncements] = useState([]);
   const messagesEndRef = useRef(null);
+  const typingTimeout = useRef(null);
 
   useEffect(() => {
     const userStr = localStorage.getItem('chat_user');
-    if (!userStr) {
-      router.push('/');
-      return;
-    }
+    if (!userStr) { router.push('/'); return; }
     const user = JSON.parse(userStr);
+    if (user.role !== 'customer') { router.push('/'); return; }
 
     const newSocket = io('http://localhost:4000');
     setSocket(newSocket);
@@ -32,60 +38,246 @@ export default function CustomerChat() {
     });
 
     newSocket.on('new_message', (message) => {
-      setMessages(prev => [...prev, message]);
+      setMessages((prev) => [...prev, message]);
+    });
+
+    newSocket.on('typing_indicator', ({ username, isTyping }) => {
+      setTypingUser(isTyping ? username : null);
+    });
+
+    newSocket.on('chat_resolved', () => {
+      setIsResolved(true);
+      setShowRating(true);
+    });
+
+    newSocket.on('announcements_update', (anns) => {
+      setAnnouncements(anns || []);
     });
 
     return () => newSocket.close();
   }, [router]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const handleTyping = () => {
+    if (!socket || !roomId) return;
+    socket.emit('typing_start', { roomId });
+    clearTimeout(typingTimeout.current);
+    typingTimeout.current = setTimeout(() => {
+      socket.emit('typing_stop', { roomId });
+    }, 1500);
+  };
 
   const sendMessage = (e) => {
     e.preventDefault();
-    if (!inputVal.trim() || !socket || !roomId) return;
-    
+    if (!inputVal.trim() || !socket || !roomId || isResolved) return;
     socket.emit('send_message', { roomId, content: inputVal });
+    socket.emit('typing_stop', { roomId });
     setInputVal('');
   };
 
+  const submitRating = () => {
+    if (!socket || !roomId || rating === 0) return;
+    socket.emit('rate_chat', { roomId, rating, comment: '' });
+    setRatingSubmitted(true);
+    setTimeout(() => setShowRating(false), 1500);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('chat_user');
+    router.push('/');
+  };
+
   return (
-    <div className="container">
-      <div className="glass-panel chat-container" style={{ margin: '0 auto', maxWidth: '800px', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '20px', borderBottom: '1px solid var(--surface-border)', background: 'rgba(0,0,0,0.2)' }}>
-          <h2 style={{ margin: 0 }}>Customer Support</h2>
-          <p style={{ margin: '4px 0 0', opacity: 0.7, fontSize: '14px' }}>
-            {roomId ? 'Connected to support line. Awaiting agent...' : 'Connecting...'}
-          </p>
+    <div className="page-container">
+      {/* Sidebar */}
+      <nav className="sidebar">
+        <div className="sidebar-header">
+          <div className="sidebar-avatar">
+            <span className="material-icons-outlined" style={{ fontSize: 20 }}>support_agent</span>
+          </div>
+          <div>
+            <div className="title-sm">Nhân viên hỗ trợ</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
+              <span className="status-dot status-online" />
+              <span className="label-md" style={{ color: 'var(--on-surface-variant)' }}>Đang trực tuyến</span>
+            </div>
+          </div>
         </div>
-        
-        <div className="messages">
-          {messages.map(msg => (
-            <div key={msg.id} className={`message ${msg.senderId === socket?.id ? 'mine' : 'theirs'}`}>
-              <div className="message-header">
-                <span>{msg.senderId === socket?.id ? 'You' : msg.senderName}</span>
-                <span style={{ marginLeft: '12px' }}>{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+
+        <div className="sidebar-nav">
+          <button className="sidebar-link active">
+            <span className="material-icons-outlined">chat_bubble</span>
+            <span>Hỗ trợ</span>
+          </button>
+        </div>
+
+        <div className="sidebar-spacer" />
+
+        <button className="sidebar-link" onClick={handleLogout}>
+          <span className="material-icons-outlined">logout</span>
+          <span>Đăng xuất</span>
+        </button>
+      </nav>
+
+      {/* Main Chat Area */}
+      <div className="main-content" style={{ display: 'flex', flexDirection: 'column' }}>
+        {/* Marquee Banner */}
+        {announcements.length > 0 && (
+          <div className="marquee-banner">
+            <div className="marquee-track">
+              {/* Duplicate for seamless loop */}
+              {[...announcements, ...announcements].map((a, i) => (
+                <span key={i} className="marquee-item">{a.content}</span>
+              ))}
+            </div>
+          </div>
+        )}
+        {/* Header */}
+        <div className="chat-header">
+          <div className="chat-header-info">
+            <h1 className="headline-sm">Hỗ trợ</h1>
+          </div>
+          {isResolved && (
+            <span className="chip chip-success">
+              <span className="material-icons-outlined" style={{ fontSize: 14 }}>check_circle</span>
+              Đã giải quyết
+            </span>
+          )}
+        </div>
+
+        {/* Product Context Card */}
+        <div style={{ padding: 'var(--space-4) var(--space-6)' }}>
+          <div className="product-card">
+            <div className="product-card-title">Nordic Chronograph v2</div>
+            <div className="product-card-meta">Trạng thái: Trong giỏ • Kích thước: 42mm</div>
+            <div className="product-card-row">
+              <div>
+                <div className="label-sm" style={{ color: 'var(--on-surface-variant)' }}>Dự kiến giao hàng</div>
+                <div className="title-sm" style={{ marginTop: 2 }}>27 Th10</div>
               </div>
-              <div className="message-content">{msg.content}</div>
+              <span className="chip chip-primary">Giao hàng hỏa tốc</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div className="messages-container">
+          {messages.length === 0 && !isResolved && (
+            <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
+              <span className="material-icons-outlined">forum</span>
+              <p className="body-md">
+                {roomId
+                  ? 'Đang chờ nhân viên hỗ trợ...'
+                  : 'Đang kết nối...'}
+              </p>
+            </div>
+          )}
+
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`bubble ${msg.senderId === socket?.id ? 'bubble-mine' : 'bubble-theirs'}`}
+            >
+              <div className="bubble-header">
+                <span className="bubble-sender">
+                  {msg.senderId === socket?.id ? 'Bạn' : msg.senderName}
+                </span>
+                <span className="bubble-time">
+                  {new Date(msg.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              <div>{msg.content}</div>
             </div>
           ))}
+
+          {typingUser && (
+            <div className="typing-indicator">
+              <span>{typingUser} đang nhập</span>
+              <div className="typing-dots">
+                <span /><span /><span />
+              </div>
+            </div>
+          )}
+
           <div ref={messagesEndRef} />
         </div>
-        
+
+        {/* Input Area */}
         <form className="input-area" onSubmit={sendMessage}>
-          <input 
-            type="text" 
-            className="input" 
-            placeholder="Type your message here..." 
+          <input
+            id="customer-message-input"
+            type="text"
+            className="input"
+            placeholder={isResolved ? 'Cuộc hội thoại đã kết thúc' : 'Nhập tin nhắn...'}
             value={inputVal}
-            onChange={e => setInputVal(e.target.value)}
+            onChange={(e) => setInputVal(e.target.value)}
+            onKeyDown={handleTyping}
+            disabled={isResolved}
           />
-          <button type="submit" className="btn" style={{ padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Send size={20} />
+          <button
+            type="submit"
+            className="send-btn"
+            disabled={!inputVal.trim() || isResolved}
+            aria-label="Gửi tin nhắn"
+          >
+            <Send size={18} />
           </button>
         </form>
       </div>
+
+      {/* Rating Modal */}
+      {showRating && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            {!ratingSubmitted ? (
+              <>
+                <span className="material-icons-outlined" style={{ fontSize: 48, color: 'var(--primary)', marginBottom: 'var(--space-4)' }}>
+                  sentiment_satisfied
+                </span>
+                <h2 className="headline-sm">Đánh giá cuộc hội thoại</h2>
+                <p className="body-md" style={{ color: 'var(--on-surface-variant)', marginTop: 'var(--space-2)' }}>
+                  Chất lượng hỗ trợ bạn nhận được thế nào?
+                </p>
+                <div className="rating-stars">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star
+                      key={star}
+                      size={36}
+                      className={`rating-star ${star <= (hoverRating || rating) ? 'active' : ''}`}
+                      fill={star <= (hoverRating || rating) ? '#f59e0b' : 'none'}
+                      onClick={() => setRating(star)}
+                      onMouseEnter={() => setHoverRating(star)}
+                      onMouseLeave={() => setHoverRating(0)}
+                      style={{ cursor: 'pointer', color: star <= (hoverRating || rating) ? '#f59e0b' : 'var(--outline-variant)' }}
+                    />
+                  ))}
+                </div>
+                <button
+                  className="btn-gradient"
+                  onClick={submitRating}
+                  disabled={rating === 0}
+                  style={{ opacity: rating === 0 ? 0.5 : 1 }}
+                >
+                  Gửi đánh giá
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="material-icons-outlined" style={{ fontSize: 48, color: '#16a34a', marginBottom: 'var(--space-4)' }}>
+                  check_circle
+                </span>
+                <h2 className="headline-sm">Cảm ơn bạn!</h2>
+                <p className="body-md" style={{ color: 'var(--on-surface-variant)', marginTop: 'var(--space-2)' }}>
+                  Đánh giá của bạn giúp chúng tôi cải thiện chất lượng dịch vụ.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

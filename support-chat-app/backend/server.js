@@ -5,6 +5,12 @@ const cors = require('cors');
 
 const app = express();
 app.use(cors());
+app.use(express.json());
+
+// Health check endpoint
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime() });
+});
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -22,5 +28,5 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
-  console.log(`Support Chat Backend listening on port ${PORT}`);
+  console.log(`Clarion Stream Backend listening on port ${PORT}`);
 });

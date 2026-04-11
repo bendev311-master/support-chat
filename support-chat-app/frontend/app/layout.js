@@ -1,13 +1,17 @@
 import './globals.css'
 
 export const metadata = {
-  title: 'Multi-Vendor Support Chat',
-  description: 'Premium customer support system',
+  title: 'Clarion Stream | Hỗ trợ Khách hàng',
+  description: 'Nền tảng hỗ trợ khách hàng cao cấp — Chat trực tuyến, quản lý đội ngũ, giám sát chất lượng dịch vụ.',
 }
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="vi">
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#005eb6" />
+      </head>
       <body>{children}</body>
     </html>
   )
