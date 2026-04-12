@@ -1,4 +1,5 @@
 const { users, rooms, resolvedRooms, chatRatings, staffMetrics, announcements } = require('../models/userModel');
+const db = require('../models/database');
 const { randomUUID } = require('crypto');
 const telegram = require('./telegramService');
 
@@ -41,23 +42,62 @@ function handleConnection(io, socket) {
     if (!role || !username) return;
     if (!['customer', 'vendor', 'admin'].includes(role)) return;
 
-    // Send active announcements to newly connected user
-    const activeAnnouncements = announcements.filter(a => a.active);
-    if (activeAnnouncements.length > 0) {
-      socket.emit('announcements_update', activeAnnouncements);
-    }
+    // ★ Save/update account in database
+    try {
+      const account = db.loginAccount(username, role, username);
+      console.log(`[DB] Account logged in: ${username} (${role}), total logins: ${account.login_count}`);
 
-    users.set(socket.id, {
-      id: socket.id,
-      role,
-      username,
-      currentRoom: null,
-      status: 'online',
-      joinedAt: new Date().toISOString()
-    });
+      // Send active announcements from DB
+      const dbAnnouncements = db.getActiveAnnouncements();
+      if (dbAnnouncements.length > 0) {
+        socket.emit('announcements_update', dbAnnouncements.map(a => ({
+          id: a.id,
+          content: a.content,
+          createdAt: a.created_at,
+          createdBy: a.created_by,
+          active: a.is_active === 1
+        })));
+      }
+
+      users.set(socket.id, {
+        id: socket.id,
+        role,
+        username,
+        accountId: account.id,
+        currentRoom: null,
+        status: 'online',
+        joinedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error('[DB] Account login error:', err.message);
+      // Fallback to in-memory only
+      users.set(socket.id, {
+        id: socket.id,
+        role,
+        username,
+        accountId: null,
+        currentRoom: null,
+        status: 'online',
+        joinedAt: new Date().toISOString()
+      });
+
+      // Send in-memory announcements as fallback
+      const activeAnnouncements = announcements.filter(a => a.active);
+      if (activeAnnouncements.length > 0) {
+        socket.emit('announcements_update', activeAnnouncements);
+      }
+    }
 
     if (role === 'customer') {
       const roomId = `room_${randomUUID()}`;
+
+      // ★ Create chat session in database
+      try {
+        db.createChatSession(roomId, username);
+      } catch (err) {
+        console.error('[DB] Create session error:', err.message);
+      }
+
       rooms.set(roomId, {
         customerId: socket.id,
         vendorId: null,
@@ -70,7 +110,19 @@ function handleConnection(io, socket) {
       });
       socket.join(roomId);
       users.get(socket.id).currentRoom = roomId;
-      socket.emit('room_assigned', { roomId });
+
+      // ★ Send previous chat history to returning customers
+      let previousHistory = [];
+      try {
+        previousHistory = db.getCustomerHistory(username);
+      } catch (err) {
+        console.error('[DB] Get history error:', err.message);
+      }
+
+      socket.emit('room_assigned', {
+        roomId,
+        chatHistory: previousHistory.slice(-5) // last 5 sessions
+      });
 
       // Telegram: notify new customer waiting
       telegram.notifyNewCustomer({ customerName: username, roomId });
@@ -102,10 +154,35 @@ function handleConnection(io, socket) {
     if (user.role === 'vendor' && !room.vendorId) {
       room.vendorId = socket.id;
       room.status = 'active';
+
+      // ★ Update session in database
+      try {
+        db.assignVendor(roomId, user.username);
+      } catch (err) {
+        console.error('[DB] Assign vendor error:', err.message);
+      }
     }
 
     socket.join(roomId);
     user.currentRoom = roomId;
+
+    // ★ Load messages from database if room messages are empty
+    if (room.messages.length === 0) {
+      try {
+        const dbMessages = db.getChatHistory(roomId);
+        room.messages = dbMessages.map(m => ({
+          id: m.id,
+          senderId: null,
+          senderName: m.sender_name,
+          role: m.sender_role,
+          content: m.content,
+          timestamp: m.created_at
+        }));
+      } catch (err) {
+        console.error('[DB] Load messages error:', err.message);
+      }
+    }
+
     socket.emit('room_joined', { roomId, messages: room.messages });
     broadcastState(io);
   });
@@ -146,6 +223,14 @@ function handleConnection(io, socket) {
     };
 
     room.messages.push(message);
+
+    // ★ Save message to database
+    try {
+      db.saveMessage(message, roomId);
+    } catch (err) {
+      console.error('[DB] Save message error:', err.message);
+    }
+
     io.to(roomId).emit('new_message', message);
 
     // Telegram: notify when CUSTOMER sends a message
@@ -160,6 +245,14 @@ function handleConnection(io, socket) {
     // Track first response time for vendor
     if (user.role === 'vendor' && !room.firstResponseAt && room.customerId !== socket.id) {
       room.firstResponseAt = new Date().toISOString();
+
+      // ★ Save first response to database
+      try {
+        db.setFirstResponse(roomId);
+      } catch (err) {
+        console.error('[DB] First response error:', err.message);
+      }
+
       const responseTime = new Date(room.firstResponseAt) - new Date(room.createdAt);
       const metrics = staffMetrics.get(socket.id);
       if (metrics) {
@@ -204,6 +297,13 @@ function handleConnection(io, socket) {
     room.status = 'resolved';
     room.resolvedAt = new Date().toISOString();
 
+    // ★ Update session in database
+    try {
+      db.resolveSession(roomId, 'resolved');
+    } catch (err) {
+      console.error('[DB] Resolve session error:', err.message);
+    }
+
     // Track resolved count for staff
     if (user.role === 'vendor') {
       const metrics = staffMetrics.get(socket.id);
@@ -236,6 +336,13 @@ function handleConnection(io, socket) {
     const room = rooms.get(roomId);
     if (room) {
       room.rating = numRating;
+    }
+
+    // ★ Save rating to database
+    try {
+      db.rateSession(roomId, numRating, sanitize(comment || ''));
+    } catch (err) {
+      console.error('[DB] Rate session error:', err.message);
     }
 
     chatRatings.set(roomId, {
@@ -307,6 +414,14 @@ function handleConnection(io, socket) {
       createdBy: user.username,
       active: true
     };
+
+    // ★ Save to database
+    try {
+      db.insertAnnouncement(announcement.id, announcement.content, announcement.createdBy);
+    } catch (err) {
+      console.error('[DB] Insert announcement error:', err.message);
+    }
+
     announcements.push(announcement);
 
     // Broadcast to ALL connected sockets
@@ -323,6 +438,13 @@ function handleConnection(io, socket) {
     if (typeof content === 'string') ann.content = sanitize(content);
     if (typeof active === 'boolean') ann.active = active;
 
+    // ★ Update in database
+    try {
+      db.updateAnnouncement(id, ann.content, ann.active ? 1 : 0);
+    } catch (err) {
+      console.error('[DB] Update announcement error:', err.message);
+    }
+
     io.emit('announcements_update', announcements.filter(a => a.active));
   });
 
@@ -333,15 +455,134 @@ function handleConnection(io, socket) {
     const idx = announcements.findIndex(a => a.id === id);
     if (idx !== -1) announcements.splice(idx, 1);
 
+    // ★ Delete from database
+    try {
+      db.deleteAnnouncement(id);
+    } catch (err) {
+      console.error('[DB] Delete announcement error:', err.message);
+    }
+
     io.emit('announcements_update', announcements.filter(a => a.active));
   });
 
   socket.on('announcements_get_all', () => {
     const user = users.get(socket.id);
-    if (!user || user.role !== 'admin') {
-      socket.emit('announcements_update', announcements.filter(a => a.active));
-    } else {
-      socket.emit('announcements_all', announcements);
+    try {
+      if (!user || user.role !== 'admin') {
+        const dbAnn = db.getActiveAnnouncements();
+        socket.emit('announcements_update', dbAnn.map(a => ({
+          id: a.id, content: a.content, createdAt: a.created_at,
+          createdBy: a.created_by, active: a.is_active === 1
+        })));
+      } else {
+        const dbAnn = db.getAllAnnouncements();
+        socket.emit('announcements_all', dbAnn.map(a => ({
+          id: a.id, content: a.content, createdAt: a.created_at,
+          createdBy: a.created_by, active: a.is_active === 1
+        })));
+      }
+    } catch (err) {
+      // Fallback to in-memory
+      if (!user || user.role !== 'admin') {
+        socket.emit('announcements_update', announcements.filter(a => a.active));
+      } else {
+        socket.emit('announcements_all', announcements);
+      }
+    }
+  });
+
+  // ── ★ Chat History & Settings (NEW) ───────────────────────
+  socket.on('get_chat_history', ({ customerName }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    // Customers can only view their own history
+    if (user.role === 'customer' && customerName && user.username !== customerName) return;
+
+    try {
+      const history = db.getCustomerHistory(customerName || user.username);
+      socket.emit('chat_history', { history });
+    } catch (err) {
+      console.error('[DB] Get chat history error:', err.message);
+      socket.emit('chat_history', { history: [] });
+    }
+  });
+
+  socket.on('get_db_settings', () => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    try {
+      const autoDeleteDays = db.getSetting('auto_delete_days', '0');
+      const dbStats = db.getDbStats();
+
+      socket.emit('db_settings', {
+        autoDeleteDays: parseInt(autoDeleteDays, 10),
+        stats: dbStats
+      });
+    } catch (err) {
+      console.error('[DB] Get settings error:', err.message);
+      socket.emit('db_settings', { autoDeleteDays: 0, stats: {} });
+    }
+  });
+
+  socket.on('set_auto_delete', ({ days }) => {
+    const user = users.get(socket.id);
+    if (!user || user.role !== 'admin') return;
+
+    const numDays = parseInt(days, 10);
+    if (isNaN(numDays) || numDays < 0 || numDays > 365) return;
+
+    try {
+      db.setSetting('auto_delete_days', String(numDays));
+      console.log(`[Settings] Auto-delete chat set to ${numDays} days (0 = disabled)`);
+
+      // Broadcast updated settings
+      io.to('admin_lobby').emit('db_settings', {
+        autoDeleteDays: numDays,
+        stats: db.getDbStats()
+      });
+    } catch (err) {
+      console.error('[DB] Set auto-delete error:', err.message);
+    }
+  });
+
+  socket.on('manual_cleanup', ({ days }) => {
+    const user = users.get(socket.id);
+    if (!user || user.role !== 'admin') return;
+
+    const numDays = parseInt(days, 10);
+    if (isNaN(numDays) || numDays < 1) return;
+
+    try {
+      const result = db.cleanupOldChats(numDays);
+      console.log(`[Manual cleanup] Deleted ${result.deletedMessages} messages, ${result.deletedSessions} sessions older than ${numDays} days`);
+
+      socket.emit('cleanup_result', {
+        ...result,
+        days: numDays
+      });
+
+      // Refresh stats
+      io.to('admin_lobby').emit('db_settings', {
+        autoDeleteDays: parseInt(db.getSetting('auto_delete_days', '0'), 10),
+        stats: db.getDbStats()
+      });
+    } catch (err) {
+      console.error('[DB] Manual cleanup error:', err.message);
+    }
+  });
+
+  socket.on('get_accounts', () => {
+    const user = users.get(socket.id);
+    if (!user || user.role !== 'admin') return;
+
+    try {
+      const accounts = db.getAllAccounts();
+      socket.emit('accounts_list', { accounts });
+    } catch (err) {
+      console.error('[DB] Get accounts error:', err.message);
+      socket.emit('accounts_list', { accounts: [] });
     }
   });
 
@@ -360,6 +601,14 @@ function handleConnection(io, socket) {
         if (room && room.status !== 'resolved') {
           room.status = 'closed';
           room.resolvedAt = new Date().toISOString();
+
+          // ★ Update in database
+          try {
+            db.resolveSession(roomId, 'closed');
+          } catch (err) {
+            console.error('[DB] Close session error:', err.message);
+          }
+
           resolvedRooms.push({ id: roomId, ...room });
           rooms.delete(roomId);
         }

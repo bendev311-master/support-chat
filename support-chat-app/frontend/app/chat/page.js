@@ -25,6 +25,8 @@ export default function CustomerChat() {
     fontSize: 'normal',
     darkMode: true,
   });
+  const [chatHistory, setChatHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
   const messagesEndRef = useRef(null);
   const typingTimeout = useRef(null);
 
@@ -51,6 +53,14 @@ export default function CustomerChat() {
 
     newSocket.on('room_assigned', (data) => {
       setRoomId(data.roomId);
+      // Load previous chat history if available
+      if (data.chatHistory) {
+        setChatHistory(data.chatHistory);
+      }
+    });
+
+    newSocket.on('chat_history', (data) => {
+      setChatHistory(data.history || []);
     });
 
     newSocket.on('new_message', (message) => {
@@ -368,6 +378,82 @@ export default function CustomerChat() {
               </div>
             </div>
 
+            <div className="settings-divider" />
+
+            {/* Chat History */}
+            <div className="settings-group">
+              <div className="settings-group-title">💬 Lịch sử chat</div>
+              <button
+                className="settings-item"
+                style={{ cursor: 'pointer' }}
+                onClick={() => { setShowHistory(!showHistory); socket?.emit('get_chat_history', {}); }}
+              >
+                <span className="material-icons-outlined">history</span>
+                <div className="settings-item-info">
+                  <div className="settings-item-label">Xem lịch sử trò chuyện</div>
+                  <div className="settings-item-desc">Xem lại các phiên chat trước đây</div>
+                </div>
+                <span className="material-icons-outlined" style={{ marginLeft: 'auto' }}>
+                  {showHistory ? 'expand_less' : 'expand_more'}
+                </span>
+              </button>
+
+              {showHistory && (
+                <div style={{ maxHeight: 300, overflowY: 'auto', marginTop: 'var(--space-2)' }}>
+                  {chatHistory.length === 0 ? (
+                    <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+                      Chưa có lịch sử chat nào
+                    </div>
+                  ) : (
+                    chatHistory.map((session, idx) => (
+                      <div key={session.id || idx} style={{
+                        padding: 'var(--space-3)',
+                        borderBottom: '1px solid var(--border-light)',
+                        fontSize: '0.8125rem'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-1)' }}>
+                          <span style={{ fontWeight: 600 }}>Phiên #{chatHistory.length - idx}</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                            {session.created_at ? new Date(session.created_at).toLocaleDateString('vi-VN') : ''}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
+                          <span className={`badge badge-${session.status === 'resolved' ? 'success' : session.status === 'closed' ? 'default' : 'warning'}`}
+                            style={{ fontSize: '0.65rem' }}>
+                            {session.status === 'resolved' ? 'Đã giải quyết' : session.status === 'closed' ? 'Đã đóng' : session.status}
+                          </span>
+                          {session.rating && (
+                            <span style={{ fontSize: '0.75rem' }}>{'⭐'.repeat(session.rating)}</span>
+                          )}
+                          {session.vendor_name && (
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>NV: {session.vendor_name}</span>
+                          )}
+                        </div>
+                        {session.messages && session.messages.length > 0 && (
+                          <div style={{ background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', padding: 'var(--space-2)', maxHeight: 120, overflowY: 'auto' }}>
+                            {session.messages.slice(-5).map((msg, mIdx) => (
+                              <div key={mIdx} style={{ marginBottom: 'var(--space-1)', fontSize: '0.75rem' }}>
+                                <span style={{ fontWeight: 600, color: msg.sender_role === 'customer' ? 'var(--primary)' : 'var(--success)' }}>
+                                  {msg.sender_name}:
+                                </span>{' '}
+                                <span>{msg.content}</span>
+                              </div>
+                            ))}
+                            {session.messages.length > 5 && (
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                                ... và {session.messages.length - 5} tin nhắn khác
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="settings-divider" />
             <div className="settings-group">
               <div className="settings-group-title">Tài khoản</div>
               <button className="settings-item" onClick={handleLogout}>

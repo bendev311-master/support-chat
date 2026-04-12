@@ -25,6 +25,10 @@ export default function AdminDashboard() {
     sound: true,
     darkMode: true,
   });
+  const [dbSettings, setDbSettings] = useState({ autoDeleteDays: 0, stats: {} });
+  const [accountsList, setAccountsList] = useState([]);
+  const [cleanupResult, setCleanupResult] = useState(null);
+  const [showAccounts, setShowAccounts] = useState(false);
 
   useEffect(() => {
     const userStr = localStorage.getItem('chat_user');
@@ -45,6 +49,14 @@ export default function AdminDashboard() {
 
     newSocket.on('connect_error', (err) => {
       console.error('Admin socket connection error:', err.message);
+    });
+
+    // Database settings listeners
+    newSocket.on('db_settings', (data) => setDbSettings(data));
+    newSocket.on('accounts_list', (data) => setAccountsList(data.accounts || []));
+    newSocket.on('cleanup_result', (data) => {
+      setCleanupResult(data);
+      setTimeout(() => setCleanupResult(null), 5000);
     });
 
     newSocket.on('state_update', (newState) => {
@@ -193,7 +205,7 @@ export default function AdminDashboard() {
         </div>
 
         <div className="sidebar-spacer" />
-        <button className="sidebar-link" onClick={() => setShowSettings(true)}>
+        <button className="sidebar-link" onClick={() => { setShowSettings(true); socket?.emit('get_db_settings'); }}>
           <span className="material-icons-outlined">settings</span>
           <span>Cài đặt</span>
         </button>
@@ -621,6 +633,131 @@ export default function AdminDashboard() {
                   <span className="toggle-slider" />
                 </label>
               </div>
+            </div>
+
+            <div className="settings-divider" />
+
+            {/* ★ Database Management */}
+            <div className="settings-group">
+              <div className="settings-group-title">🗄️ Quản lý Database</div>
+
+              {/* DB Stats */}
+              {dbSettings.stats && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
+                  <div className="stat-card" style={{ padding: 'var(--space-3)', textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{dbSettings.stats.total_accounts || 0}</div>
+                    <div className="label-sm">Tài khoản</div>
+                  </div>
+                  <div className="stat-card" style={{ padding: 'var(--space-3)', textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{dbSettings.stats.total_sessions || 0}</div>
+                    <div className="label-sm">Phiên chat</div>
+                  </div>
+                  <div className="stat-card" style={{ padding: 'var(--space-3)', textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{dbSettings.stats.total_messages || 0}</div>
+                    <div className="label-sm">Tin nhắn</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Auto-delete setting */}
+              <div className="settings-item">
+                <span className="material-icons-outlined">auto_delete</span>
+                <div className="settings-item-info">
+                  <div className="settings-item-label">Tự động xóa lịch sử chat</div>
+                  <div className="settings-item-desc">
+                    {dbSettings.autoDeleteDays > 0
+                      ? `Xóa tin nhắn cũ hơn ${dbSettings.autoDeleteDays} ngày`
+                      : 'Đang tắt — giữ toàn bộ lịch sử'}
+                  </div>
+                </div>
+                <select
+                  className="input"
+                  style={{ width: 100, marginLeft: 'auto' }}
+                  value={dbSettings.autoDeleteDays}
+                  onChange={(e) => {
+                    const days = parseInt(e.target.value, 10);
+                    socket?.emit('set_auto_delete', { days });
+                  }}
+                >
+                  <option value={0}>Tắt</option>
+                  <option value={3}>3 ngày</option>
+                  <option value={7}>7 ngày</option>
+                  <option value={14}>14 ngày</option>
+                  <option value={30}>30 ngày</option>
+                  <option value={90}>90 ngày</option>
+                </select>
+              </div>
+
+              {/* Manual cleanup buttons */}
+              <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)', flexWrap: 'wrap' }}>
+                <button
+                  className="btn-outline"
+                  style={{ fontSize: '0.75rem', padding: '6px 12px' }}
+                  onClick={() => { if (confirm('Xóa chat cũ hơn 3 ngày?')) socket?.emit('manual_cleanup', { days: 3 }); }}
+                >
+                  🗑️ Xóa chat {'>'} 3 ngày
+                </button>
+                <button
+                  className="btn-outline"
+                  style={{ fontSize: '0.75rem', padding: '6px 12px' }}
+                  onClick={() => { if (confirm('Xóa chat cũ hơn 7 ngày?')) socket?.emit('manual_cleanup', { days: 7 }); }}
+                >
+                  🗑️ Xóa chat {'>'} 7 ngày
+                </button>
+              </div>
+
+              {cleanupResult && (
+                <div style={{ marginTop: 'var(--space-3)', padding: 'var(--space-3)', background: 'var(--success-bg)', borderRadius: 'var(--radius-md)', fontSize: '0.8125rem' }}>
+                  ✅ Đã xóa {cleanupResult.deletedMessages} tin nhắn và {cleanupResult.deletedSessions} phiên chat cũ hơn {cleanupResult.days} ngày
+                </div>
+              )}
+
+              {/* View accounts */}
+              <button
+                className="settings-item"
+                style={{ marginTop: 'var(--space-3)', cursor: 'pointer' }}
+                onClick={() => { setShowAccounts(!showAccounts); socket?.emit('get_accounts'); }}
+              >
+                <span className="material-icons-outlined">people</span>
+                <div className="settings-item-info">
+                  <div className="settings-item-label">Danh sách tài khoản</div>
+                  <div className="settings-item-desc">Xem tất cả tài khoản đã đăng nhập</div>
+                </div>
+                <span className="material-icons-outlined" style={{ marginLeft: 'auto' }}>
+                  {showAccounts ? 'expand_less' : 'expand_more'}
+                </span>
+              </button>
+
+              {showAccounts && accountsList.length > 0 && (
+                <div style={{ maxHeight: 200, overflowY: 'auto', marginTop: 'var(--space-2)' }}>
+                  <table style={{ width: '100%', fontSize: '0.75rem', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                        <th style={{ textAlign: 'left', padding: '4px 8px' }}>Tên</th>
+                        <th style={{ textAlign: 'left', padding: '4px 8px' }}>Vai trò</th>
+                        <th style={{ textAlign: 'right', padding: '4px 8px' }}>Đăng nhập</th>
+                        <th style={{ textAlign: 'right', padding: '4px 8px' }}>Lần cuối</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {accountsList.map(acc => (
+                        <tr key={acc.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                          <td style={{ padding: '4px 8px' }}>{acc.username}</td>
+                          <td style={{ padding: '4px 8px' }}>
+                            <span className={`badge badge-${acc.role === 'admin' ? 'info' : acc.role === 'vendor' ? 'success' : 'warning'}`} style={{ fontSize: '0.65rem' }}>
+                              {acc.role}
+                            </span>
+                          </td>
+                          <td style={{ padding: '4px 8px', textAlign: 'right' }}>{acc.login_count}x</td>
+                          <td style={{ padding: '4px 8px', textAlign: 'right', fontSize: '0.65rem' }}>
+                            {acc.last_login_at ? new Date(acc.last_login_at).toLocaleDateString('vi-VN') : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             <div className="settings-divider" />
