@@ -53,6 +53,10 @@ export default function CustomerChat() {
 
     newSocket.on('room_assigned', (data) => {
       setRoomId(data.roomId);
+      // Restore messages if reconnecting to existing room
+      if (data.messages && data.messages.length > 0) {
+        setMessages(data.messages);
+      }
       // Load previous chat history if available
       if (data.chatHistory) {
         setChatHistory(data.chatHistory);

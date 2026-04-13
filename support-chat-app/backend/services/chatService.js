@@ -89,43 +89,79 @@ function handleConnection(io, socket) {
     }
 
     if (role === 'customer') {
-      const roomId = `room_${randomUUID()}`;
-
-      // ★ Create chat session in database
-      try {
-        db.createChatSession(roomId, username);
-      } catch (err) {
-        console.error('[DB] Create session error:', err.message);
+      // Check if customer has an existing active room (reconnection)
+      let existingRoomId = null;
+      for (const [rid, room] of rooms.entries()) {
+        const existingCustomer = users.get(room.customerId);
+        if (existingCustomer && existingCustomer.username === username) {
+          existingRoomId = rid;
+          break;
+        }
+        // Also check if room was left by this username (customer disconnected)
+        if (!existingCustomer && room._customerName === username && room.status !== 'resolved' && room.status !== 'closed') {
+          existingRoomId = rid;
+          break;
+        }
       }
 
-      rooms.set(roomId, {
-        customerId: socket.id,
-        vendorId: null,
-        messages: [],
-        status: 'waiting',
-        createdAt: new Date().toISOString(),
-        resolvedAt: null,
-        rating: null,
-        firstResponseAt: null
-      });
-      socket.join(roomId);
-      users.get(socket.id).currentRoom = roomId;
+      if (existingRoomId) {
+        // Reconnect to existing room
+        const room = rooms.get(existingRoomId);
+        if (room._disconnectTimer) {
+          clearTimeout(room._disconnectTimer);
+          delete room._disconnectTimer;
+        }
+        room.customerId = socket.id;
+        socket.join(existingRoomId);
+        users.get(socket.id).currentRoom = existingRoomId;
 
-      // ★ Send previous chat history to returning customers
-      let previousHistory = [];
-      try {
-        previousHistory = db.getCustomerHistory(username);
-      } catch (err) {
-        console.error('[DB] Get history error:', err.message);
+        socket.emit('room_assigned', {
+          roomId: existingRoomId,
+          messages: room.messages,
+          chatHistory: []
+        });
+        console.log(`[Reconnect] Customer ${username} rejoined room ${existingRoomId}`);
+      } else {
+        // Create new room
+        const roomId = `room_${randomUUID()}`;
+
+        // ★ Create chat session in database
+        try {
+          db.createChatSession(roomId, username);
+        } catch (err) {
+          console.error('[DB] Create session error:', err.message);
+        }
+
+        rooms.set(roomId, {
+          customerId: socket.id,
+          vendorId: null,
+          messages: [],
+          status: 'waiting',
+          createdAt: new Date().toISOString(),
+          resolvedAt: null,
+          rating: null,
+          firstResponseAt: null,
+          _customerName: username // Store for reconnection lookup
+        });
+        socket.join(roomId);
+        users.get(socket.id).currentRoom = roomId;
+
+        // ★ Send previous chat history to returning customers
+        let previousHistory = [];
+        try {
+          previousHistory = db.getCustomerHistory(username);
+        } catch (err) {
+          console.error('[DB] Get history error:', err.message);
+        }
+
+        socket.emit('room_assigned', {
+          roomId,
+          chatHistory: previousHistory.slice(-5) // last 5 sessions
+        });
+
+        // Telegram: notify new customer waiting
+        telegram.notifyNewCustomer({ customerName: username, roomId });
       }
-
-      socket.emit('room_assigned', {
-        roomId,
-        chatHistory: previousHistory.slice(-5) // last 5 sessions
-      });
-
-      // Telegram: notify new customer waiting
-      telegram.notifyNewCustomer({ customerName: username, roomId });
     } else {
       socket.join('admin_lobby');
 
@@ -597,20 +633,27 @@ function handleConnection(io, socket) {
         const room = rooms.get(roomId);
         io.to(roomId).emit('user_offline', { userId: socket.id, role: 'customer' });
 
-        // Clean up: archive and remove unresolved rooms
+        // Grace period: wait 30 seconds before closing room
+        // This allows for page refreshes and brief disconnects
         if (room && room.status !== 'resolved') {
-          room.status = 'closed';
-          room.resolvedAt = new Date().toISOString();
+          room._disconnectTimer = setTimeout(() => {
+            const currentRoom = rooms.get(roomId);
+            if (currentRoom && currentRoom.customerId === socket.id && currentRoom.status !== 'resolved') {
+              currentRoom.status = 'closed';
+              currentRoom.resolvedAt = new Date().toISOString();
 
-          // ★ Update in database
-          try {
-            db.resolveSession(roomId, 'closed');
-          } catch (err) {
-            console.error('[DB] Close session error:', err.message);
-          }
+              // ★ Update in database
+              try {
+                db.resolveSession(roomId, 'closed');
+              } catch (err) {
+                console.error('[DB] Close session error:', err.message);
+              }
 
-          resolvedRooms.push({ id: roomId, ...room });
-          rooms.delete(roomId);
+              resolvedRooms.push({ id: roomId, ...currentRoom });
+              rooms.delete(roomId);
+              broadcastState(io);
+            }
+          }, 30000); // 30 second grace period
         }
       }
     }
@@ -637,7 +680,13 @@ function broadcastState(io) {
   const connectedUsers = Array.from(users.values());
   const activeRooms = Array.from(rooms.entries()).map(([id, data]) => ({
     id,
-    ...data,
+    customerId: data.customerId,
+    vendorId: data.vendorId,
+    status: data.status,
+    createdAt: data.createdAt,
+    resolvedAt: data.resolvedAt,
+    firstResponseAt: data.firstResponseAt,
+    messageCount: data.messages.length,
     customerName: users.get(data.customerId)?.username || 'Đã ngắt kết nối',
     vendorName: users.get(data.vendorId)?.username || null
   }));

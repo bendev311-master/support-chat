@@ -96,13 +96,8 @@ export default function VendorPanel() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Sync messages when state updates and we have active room
-  useEffect(() => {
-    if (activeRoomId && state.activeRooms) {
-      const room = state.activeRooms.find((r) => r.id === activeRoomId);
-      if (room) setMessages(room.messages);
-    }
-  }, [state, activeRoomId]);
+  // Note: Messages are synced via 'room_joined' and 'new_message' events only
+  // Do NOT sync from state_update to avoid overwriting real-time messages
 
   const joinRoom = (roomId) => {
     if (socket) socket.emit('join_room', { roomId });
@@ -269,8 +264,8 @@ export default function VendorPanel() {
                 <div className="chat-item-content">
                   <div className="chat-item-name">{room.customerName}</div>
                   <div className="chat-item-preview">
-                    {room.messages.length > 0
-                      ? room.messages[room.messages.length - 1].content
+                    {room.messageCount > 0
+                      ? `${room.messageCount} tin nhắn`
                       : 'Chưa có tin nhắn'}
                   </div>
                 </div>
@@ -341,7 +336,7 @@ export default function VendorPanel() {
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div className="label-sm" style={{ color: 'var(--on-surface-variant)' }}>Tin nhắn</div>
-                      <div className="title-sm">{activeRoom.messages.length}</div>
+                      <div className="title-sm">{messages.length}</div>
                     </div>
                   </div>
                 </div>
