@@ -10,6 +10,10 @@ const app = express();
 app.use(cors({ origin: FRONTEND_URL }));
 app.use(express.json());
 
+// Auth API routes
+const { router: authRouter } = require('./routes/auth');
+app.use('/api/auth', authRouter);
+
 // Health check endpoint
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', uptime: process.uptime() });

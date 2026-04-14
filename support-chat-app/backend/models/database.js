@@ -51,12 +51,27 @@ async function initDatabase() {
       role TEXT NOT NULL CHECK(role IN ('customer', 'vendor', 'admin')),
       display_name TEXT,
       email TEXT,
+      password_hash TEXT,
+      google_id TEXT,
+      avatar_url TEXT,
+      auth_provider TEXT DEFAULT 'local',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       last_login_at TEXT,
       login_count INTEGER NOT NULL DEFAULT 0,
       is_active INTEGER NOT NULL DEFAULT 1
     )
   `);
+
+  // Migration: add new columns to existing tables
+  const migrations = [
+    "ALTER TABLE accounts ADD COLUMN password_hash TEXT",
+    "ALTER TABLE accounts ADD COLUMN google_id TEXT",
+    "ALTER TABLE accounts ADD COLUMN avatar_url TEXT",
+    "ALTER TABLE accounts ADD COLUMN auth_provider TEXT DEFAULT 'local'"
+  ];
+  migrations.forEach(sql => {
+    try { db.run(sql); } catch (e) { /* column already exists */ }
+  });
 
   db.run(`
     CREATE TABLE IF NOT EXISTS chat_sessions (
@@ -104,6 +119,18 @@ async function initDatabase() {
     )
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS login_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER NOT NULL,
+      ip_address TEXT,
+      user_agent TEXT,
+      login_method TEXT DEFAULT 'password',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+    )
+  `);
+
   // Create indexes
   const indexes = [
     'CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)',
@@ -111,6 +138,8 @@ async function initDatabase() {
     'CREATE INDEX IF NOT EXISTS idx_sessions_status ON chat_sessions(status)',
     'CREATE INDEX IF NOT EXISTS idx_sessions_created ON chat_sessions(created_at)',
     'CREATE INDEX IF NOT EXISTS idx_accounts_username ON accounts(username)',
+    'CREATE INDEX IF NOT EXISTS idx_accounts_google ON accounts(google_id)',
+    'CREATE INDEX IF NOT EXISTS idx_login_history_account ON login_history(account_id)',
   ];
   indexes.forEach(sql => db.run(sql));
 
@@ -176,8 +205,50 @@ function loginAccount(username, role, displayName) {
   return getOne('SELECT * FROM accounts WHERE username = ?', [username]);
 }
 
+function getAccountByUsername(username) {
+  return getOne('SELECT * FROM accounts WHERE username = ?', [username]);
+}
+
+function getAccountByGoogleId(googleId) {
+  return getOne('SELECT * FROM accounts WHERE google_id = ?', [googleId]);
+}
+
+function createAccount(username, role, email, passwordHash, authProvider, googleId, avatarUrl) {
+  runQuery(
+    `INSERT INTO accounts (username, role, email, password_hash, auth_provider, google_id, avatar_url, display_name, last_login_at, login_count)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), 1)`,
+    [username, role, email || null, passwordHash || null, authProvider || 'local', googleId || null, avatarUrl || null, username]
+  );
+  return getOne('SELECT * FROM accounts WHERE username = ?', [username]);
+}
+
+function updateLoginInfo(accountId, role) {
+  runQuery(
+    `UPDATE accounts SET last_login_at = datetime('now'), login_count = login_count + 1, role = ? WHERE id = ?`,
+    [role, accountId]
+  );
+}
+
+function updateAvatar(accountId, avatarUrl) {
+  runQuery(`UPDATE accounts SET avatar_url = ? WHERE id = ?`, [avatarUrl, accountId]);
+}
+
+function logLoginHistory(accountId, ip, userAgent, method) {
+  runQuery(
+    `INSERT INTO login_history (account_id, ip_address, user_agent, login_method) VALUES (?, ?, ?, ?)`,
+    [accountId, ip || '', userAgent || '', method || 'password']
+  );
+}
+
+function getLoginHistory(accountId, limit) {
+  return getAll(
+    'SELECT * FROM login_history WHERE account_id = ? ORDER BY created_at DESC LIMIT ?',
+    [accountId, limit || 20]
+  );
+}
+
 function getAllAccounts() {
-  return getAll('SELECT * FROM accounts ORDER BY last_login_at DESC');
+  return getAll('SELECT id, username, role, email, auth_provider, avatar_url, created_at, last_login_at, login_count, is_active FROM accounts ORDER BY last_login_at DESC');
 }
 
 // ─── Chat Session Operations ─────────────────────────────────
@@ -352,6 +423,13 @@ process.on('SIGINT', () => {
 module.exports = {
   initDatabase,
   loginAccount,
+  getAccountByUsername,
+  getAccountByGoogleId,
+  createAccount,
+  updateLoginInfo,
+  updateAvatar,
+  logLoginHistory,
+  getLoginHistory,
   getAllAccounts,
   createChatSession,
   assignVendor,
