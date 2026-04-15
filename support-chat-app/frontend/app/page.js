@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import API_URL from './config';
+import { useBranding, SiteLogo } from './branding';
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
 
@@ -128,6 +129,7 @@ export default function CustomerLoginPage() {
       {/* Hero Section */}
       <div className="auth-hero">
         <div className="auth-hero-content">
+          <SiteLogo size={56} style={{ marginBottom: 'var(--space-4)' }} />
           <h1>{isRegister ? 'Tham gia Clarion Stream.' : 'Trải nghiệm Khách hàng Đẳng cấp.'}</h1>
           <p>
             {isRegister

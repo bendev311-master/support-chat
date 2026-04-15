@@ -14,6 +14,10 @@ app.use(express.json());
 const { router: authRouter } = require('./routes/auth');
 app.use('/api/auth', authRouter);
 
+// Branding API routes
+const brandingRouter = require('./routes/branding');
+app.use('/api/branding', brandingRouter);
+
 // Health check endpoint
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', uptime: process.uptime() });

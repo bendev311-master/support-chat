@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { useRouter } from 'next/navigation';
 import API_URL from '../config';
+import { SiteLogo } from '../branding';
 import { Send } from 'lucide-react';
 
 export default function VendorPanel() {
@@ -164,9 +165,7 @@ export default function VendorPanel() {
       {/* Sidebar */}
       <nav className="sidebar">
         <div className="sidebar-header">
-          <div className="sidebar-avatar">
-            <span className="material-icons-outlined" style={{ fontSize: 20 }}>support_agent</span>
-          </div>
+          <SiteLogo size={36} />
           <div>
             <div className="title-sm">Nhân viên hỗ trợ</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>

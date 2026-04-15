@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import API_URL from '../config';
+import { SiteLogo } from '../branding';
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
 
@@ -123,6 +124,7 @@ export default function StaffLoginPage() {
           <p className="label-sm" style={{ color: 'rgba(255,255,255,0.6)', marginBottom: 'var(--space-4)' }}>
             CLARION STREAM
           </p>
+          <SiteLogo size={56} style={{ marginBottom: 'var(--space-4)' }} />
           <h1 style={{ fontSize: '1.75rem' }}>
             {isRegister ? 'Tạo tài khoản Nhân viên' : 'Chào mừng trở lại,\nĐội ngũ Clarion.'}
           </h1>

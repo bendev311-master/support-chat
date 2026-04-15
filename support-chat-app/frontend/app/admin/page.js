@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import { useRouter } from 'next/navigation';
 import API_URL from '../config';
+import { SiteLogo, useBranding } from '../branding';
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -29,6 +30,13 @@ export default function AdminDashboard() {
   const [accountsList, setAccountsList] = useState([]);
   const [cleanupResult, setCleanupResult] = useState(null);
   const [showAccounts, setShowAccounts] = useState(false);
+  // Branding states
+  const { refresh: refreshBranding } = useBranding();
+  const [brandingData, setBrandingData] = useState({ logo: '', siteName: 'Clarion Stream', primaryColor: '', footerText: '' });
+  const [logoPreview, setLogoPreview] = useState('');
+  const [brandingSaving, setBrandingSaving] = useState(false);
+  const [brandingMsg, setBrandingMsg] = useState('');
+  const logoInputRef = useState(null);
 
   useEffect(() => {
     const userStr = localStorage.getItem('chat_user');
@@ -92,6 +100,12 @@ export default function AdminDashboard() {
     });
     newSocket.emit('announcements_get_all');
 
+    // Fetch branding
+    fetch(`${API_URL}/api/branding`).then(r => r.json()).then(data => {
+      setBrandingData(data);
+      setLogoPreview(data.logo || '');
+    }).catch(() => {});
+
     return () => newSocket.close();
   }, [router]);
 
@@ -102,6 +116,78 @@ export default function AdminDashboard() {
   const handleLogout = () => {
     localStorage.removeItem('chat_user');
     router.push('/staff-login');
+  };
+
+  // ── Branding handlers ─────────────────────
+  const handleLogoSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 500 * 1024) {
+      setBrandingMsg('❌ Kích thước ảnh tối đa 500KB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setLogoPreview(reader.result);
+      setBrandingMsg('');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const saveBranding = async () => {
+    setBrandingSaving(true);
+    setBrandingMsg('');
+    try {
+      // Upload logo if changed
+      if (logoPreview !== brandingData.logo) {
+        const logoRes = await fetch(`${API_URL}/api/branding/logo`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ logo: logoPreview }),
+        });
+        if (!logoRes.ok) {
+          const err = await logoRes.json();
+          throw new Error(err.error);
+        }
+      }
+      // Save other settings
+      await fetch(`${API_URL}/api/branding`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          siteName: brandingData.siteName,
+          primaryColor: brandingData.primaryColor,
+          footerText: brandingData.footerText,
+        }),
+      });
+      setBrandingMsg('✅ Đã lưu thành công! Logo đã đồng bộ tất cả trang.');
+      refreshBranding();
+      // Update local state
+      setBrandingData(prev => ({ ...prev, logo: logoPreview }));
+    } catch (err) {
+      setBrandingMsg(`❌ ${err.message}`);
+    } finally {
+      setBrandingSaving(false);
+    }
+  };
+
+  const removeLogo = async () => {
+    setBrandingSaving(true);
+    try {
+      await fetch(`${API_URL}/api/branding/logo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ logo: '' }),
+      });
+      setLogoPreview('');
+      setBrandingData(prev => ({ ...prev, logo: '' }));
+      setBrandingMsg('✅ Đã xóa logo');
+      refreshBranding();
+    } catch {
+      setBrandingMsg('❌ Lỗi xóa logo');
+    } finally {
+      setBrandingSaving(false);
+    }
   };
 
   const saveTelegramConfig = () => {
@@ -163,9 +249,7 @@ export default function AdminDashboard() {
       {/* Sidebar */}
       <nav className="sidebar">
         <div className="sidebar-header">
-          <div className="sidebar-avatar">
-            <span className="material-icons-outlined" style={{ fontSize: 20 }}>admin_panel_settings</span>
-          </div>
+          <SiteLogo size={36} />
           <div>
             <div className="title-sm">Quản trị viên</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
@@ -636,6 +720,104 @@ export default function AdminDashboard() {
             </div>
 
             <div className="settings-divider" />
+
+            {/* ★ Logo & Branding */}
+            <div className="settings-group">
+              <div className="settings-group-title">🎨 Logo & Thương hiệu</div>
+              <div className="settings-item-desc" style={{ marginBottom: 'var(--space-3)' }}>
+                Logo sẽ đồng bộ trên tất cả các trang: Đăng nhập Khách hàng, Đăng nhập Nhân viên, Chat, Vendor, Admin.
+              </div>
+
+              {/* Logo Preview & Upload */}
+              <div style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'flex-start', marginBottom: 'var(--space-4)' }}>
+                <div style={{
+                  width: 80, height: 80, borderRadius: 12,
+                  border: '2px dashed var(--outline-variant)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  overflow: 'hidden', background: 'var(--surface-container)',
+                  flexShrink: 0, position: 'relative'
+                }}>
+                  {logoPreview ? (
+                    <img src={logoPreview} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  ) : (
+                    <div style={{ textAlign: 'center', color: 'var(--on-surface-variant)', fontSize: '0.7rem' }}>
+                      <span className="material-icons-outlined" style={{ fontSize: 28, opacity: 0.5 }}>image</span>
+                      <div>Chưa có logo</div>
+                    </div>
+                  )}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: 'var(--space-2)' }}>Logo hệ thống</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--on-surface-variant)', marginBottom: 'var(--space-3)' }}>
+                    PNG, JPG, SVG, WebP — tối đa 500KB
+                  </div>
+                  <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                    <label style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)',
+                      padding: '6px 14px', borderRadius: 'var(--radius-full)',
+                      background: 'var(--primary)', color: '#fff',
+                      fontSize: '0.8125rem', cursor: 'pointer', fontWeight: 500
+                    }}>
+                      <span className="material-icons-outlined" style={{ fontSize: 16 }}>upload</span>
+                      Tải lên
+                      <input type="file" accept="image/*" style={{ display: 'none' }}
+                        onChange={handleLogoSelect} />
+                    </label>
+                    {logoPreview && (
+                      <button
+                        onClick={removeLogo}
+                        disabled={brandingSaving}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)',
+                          padding: '6px 14px', borderRadius: 'var(--radius-full)',
+                          border: '1px solid var(--error)', background: 'transparent',
+                          color: 'var(--error)', fontSize: '0.8125rem', cursor: 'pointer'
+                        }}
+                      >
+                        <span className="material-icons-outlined" style={{ fontSize: 16 }}>delete</span>
+                        Xóa
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Site Name */}
+              <div className="settings-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 'var(--space-2)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                  <span className="material-icons-outlined">badge</span>
+                  <div className="settings-item-label">Tên hệ thống</div>
+                </div>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Clarion Stream"
+                  value={brandingData.siteName}
+                  onChange={(e) => setBrandingData(prev => ({ ...prev, siteName: e.target.value }))}
+                  style={{ fontSize: '0.875rem' }}
+                />
+              </div>
+
+              {/* Save Button */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginTop: 'var(--space-4)' }}>
+                <button
+                  className="btn-gradient"
+                  onClick={saveBranding}
+                  disabled={brandingSaving}
+                  style={{ padding: '8px 24px', fontSize: '0.875rem' }}
+                >
+                  {brandingSaving ? (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                      <span className="material-icons-outlined" style={{ fontSize: 16, animation: 'spin 1s linear infinite' }}>sync</span>
+                      Đang lưu...
+                    </span>
+                  ) : '💾 Lưu thương hiệu'}
+                </button>
+                {brandingMsg && (
+                  <span style={{ fontSize: '0.8125rem', animation: 'fadeSlideUp 0.3s ease' }}>{brandingMsg}</span>
+                )}
+              </div>
+            </div>
 
             {/* ★ Database Management */}
             <div className="settings-group">
