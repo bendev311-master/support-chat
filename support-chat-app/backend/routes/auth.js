@@ -41,17 +41,37 @@ router.post('/register', async (req, res) => {
     const validRoles = ['customer', 'vendor', 'admin'];
     const userRole = validRoles.includes(role) ? role : 'customer';
 
-    // Check if username exists
-    const existing = db.getAccountByUsername(username.trim());
-    if (existing) {
-      return res.status(409).json({ error: 'Tên người dùng đã tồn tại' });
-    }
-
     // Hash password
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    // Create account
+    // Check if username exists
+    const existing = db.getAccountByUsername(username.trim());
+
+    if (existing) {
+      // Old account without password → upgrade it
+      if (!existing.password_hash) {
+        db.setPasswordHash(existing.id, passwordHash);
+        db.updateLoginInfo(existing.id, userRole);
+        db.logLoginHistory(existing.id, req.ip, req.headers['user-agent'] || '', 'register_upgrade');
+
+        const token = generateToken({ ...existing, role: userRole });
+        return res.status(200).json({
+          token,
+          user: {
+            id: existing.id,
+            username: existing.username,
+            role: userRole,
+            email: existing.email || email,
+            auth_provider: 'local'
+          }
+        });
+      }
+      // Already has password → can't register again
+      return res.status(409).json({ error: 'Tên người dùng đã tồn tại. Vui lòng đăng nhập.' });
+    }
+
+    // Create new account
     const account = db.createAccount(username.trim(), userRole, email || null, passwordHash, 'local');
 
     // Log login history
@@ -86,11 +106,35 @@ router.post('/login', async (req, res) => {
 
     const account = db.getAccountByUsername(username.trim());
     if (!account) {
-      return res.status(401).json({ error: 'Tài khoản không tồn tại' });
+      return res.status(401).json({ error: 'Tài khoản không tồn tại. Vui lòng đăng ký trước.' });
     }
 
+    // Old account without password → auto-set password on first login
     if (!account.password_hash) {
-      return res.status(401).json({ error: 'Tài khoản chưa đặt mật khẩu. Vui lòng đăng ký lại.' });
+      if (password.length < 6) {
+        return res.status(400).json({ error: 'Mật khẩu phải có ít nhất 6 ký tự (đặt mật khẩu lần đầu)' });
+      }
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash(password, salt);
+      db.setPasswordHash(account.id, passwordHash);
+
+      const validRoles = ['customer', 'vendor', 'admin'];
+      const loginRole = validRoles.includes(role) ? role : account.role;
+      db.updateLoginInfo(account.id, loginRole);
+      db.logLoginHistory(account.id, req.ip, req.headers['user-agent'] || '', 'password_set');
+
+      const token = generateToken({ ...account, role: loginRole });
+      return res.json({
+        token,
+        user: {
+          id: account.id,
+          username: account.username,
+          role: loginRole,
+          email: account.email,
+          auth_provider: 'local'
+        },
+        message: 'Mật khẩu đã được thiết lập thành công!'
+      });
     }
 
     const isMatch = await bcrypt.compare(password, account.password_hash);
@@ -135,8 +179,6 @@ router.post('/google', async (req, res) => {
       return res.status(400).json({ error: 'Token Google không hợp lệ' });
     }
 
-    // Decode Google JWT (verify signature in production with Google certs)
-    // For simplicity, decode the payload (Google ID tokens are JWTs)
     const parts = credential.split('.');
     if (parts.length !== 3) {
       return res.status(400).json({ error: 'Token Google không hợp lệ' });
@@ -163,11 +205,9 @@ router.post('/google', async (req, res) => {
     let account = db.getAccountByGoogleId(googleId);
 
     if (account) {
-      // Update login info
       db.updateLoginInfo(account.id, userRole);
       if (picture) db.updateAvatar(account.id, picture);
     } else {
-      // Check if username exists (use email prefix or name)
       const displayName = name || email.split('@')[0];
       account = db.createAccount(displayName, userRole, email, null, 'google', googleId, picture);
     }

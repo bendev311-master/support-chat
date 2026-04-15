@@ -233,6 +233,10 @@ function updateAvatar(accountId, avatarUrl) {
   runQuery(`UPDATE accounts SET avatar_url = ? WHERE id = ?`, [avatarUrl, accountId]);
 }
 
+function setPasswordHash(accountId, passwordHash) {
+  runQuery(`UPDATE accounts SET password_hash = ?, auth_provider = 'local' WHERE id = ?`, [passwordHash, accountId]);
+}
+
 function logLoginHistory(accountId, ip, userAgent, method) {
   runQuery(
     `INSERT INTO login_history (account_id, ip_address, user_agent, login_method) VALUES (?, ?, ?, ?)`,
@@ -428,6 +432,7 @@ module.exports = {
   createAccount,
   updateLoginInfo,
   updateAvatar,
+  setPasswordHash,
   logLoginHistory,
   getLoginHistory,
   getAllAccounts,
